@@ -9,7 +9,7 @@
     flake-utils.url = "github:hamishmack/flake-utils/hkm/nested-hydraJobs";
 
     # this is node 8.10
-    cardano-node.url = "github:IntersectMBO/cardano-node/11d12d8fb6a4d65a996884f283bb40d66d904bbf";
+    cardano-node.url = "github:IntersectMBO/cardano-node/176f99e51155cb3eaa0711db1c3c969d67438958";
 
     CHaP.url = "github:IntersectMBO/cardano-haskell-packages?ref=repo";
     CHaP.flake = false;
