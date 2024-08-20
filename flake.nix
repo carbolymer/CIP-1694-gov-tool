@@ -8,8 +8,8 @@
     iohkNix.url = "github:input-output-hk/iohk-nix";
     flake-utils.url = "github:hamishmack/flake-utils/hkm/nested-hydraJobs";
 
-    # this is node 8.10
-    cardano-node.url = "github:IntersectMBO/cardano-node/176f99e51155cb3eaa0711db1c3c969d67438958";
+    # this is latest master
+    cardano-node.url = "github:IntersectMBO/cardano-node/e9ab511272a7694196778007211991a9984557e8";
 
     CHaP.url = "github:IntersectMBO/cardano-haskell-packages?ref=repo";
     CHaP.flake = false;

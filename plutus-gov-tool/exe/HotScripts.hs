@@ -27,20 +27,21 @@ import PlutusTx.Prelude
       even,
       divide,
       Ord (..),
-      Eq (..), 
-      Maybe (..), 
-      maybe, 
-      (<$>), 
+      Eq (..),
+      Maybe (..),
+      maybe,
+      (<$>),
       check,
       traceIfFalse,
-      (/=), 
-      modulo )
+      (/=),
+      modulo,
+      BuiltinUnit)
 import PlutusTx.List
     ( any,
       map,
       elem,
       foldr,
-      filter, 
+      filter,
       find )
 import PlutusTx.Builtins
     ( BuiltinByteString, Integer, error, BuiltinData)
@@ -55,12 +56,13 @@ import PlutusLedgerApi.V3
       TxOut (..),
       Value (..),
       PubKeyHash,
-      TxCert (..), 
-      ToData (..), 
+      TxCert (..),
+      ToData (..),
       FromData (..),
-      Datum (..), 
+      Datum (..),
       UnsafeFromData (..),
-      OutputDatum (..))
+      OutputDatum (..),
+      ScriptInfo (..))
 import PlutusLedgerApi.V3.Contexts (
     findTxInByTxOutRef,
     txSignedBy )
@@ -74,7 +76,7 @@ import PlutusTx.Bool
 import PlutusTx.Numeric
     ( AdditiveGroup(..),
       AdditiveSemigroup (..) )
-import ColdScripts 
+import ColdScripts
     ( ColdLockScriptDatum (..),
       X509 (..))
 import Shared (wrapTwoArgs, wrapThreeArgs, wrapFourArgs)
@@ -90,18 +92,18 @@ import Shared (wrapTwoArgs, wrapThreeArgs, wrapFourArgs)
 --
 -- The spending script governs the unlocking of the "Hot NFT", and thus how the hot credential can
 -- be witnessed. This means that the main purpose of the hot lock script is vote on governance actions.
--- 
+--
 -- Note that the hot credential that is appointed by the the cold credential script can always override the
--- the function of this script. As appointing a different credential as a hot credential will make the old one 
+-- the function of this script. As appointing a different credential as a hot credential will make the old one
 -- obsolete.
 
 -- [CC hot credential script]
--- This script just checks that the hard-coded currency symbol of the "Hot NFT" is 
+-- This script just checks that the hard-coded currency symbol of the "Hot NFT" is
 -- in any spending input of the transaction.
 {-# INLINABLE hotCredentialScript #-}
 hotCredentialScript :: CurrencySymbol -> BuiltinData -> ScriptContext -> Bool
-hotCredentialScript symbol _ ctx = case scriptContextPurpose ctx of
-    Voting _  -> any (\value -> symbol `member` value) txInputsValues
+hotCredentialScript symbol _ ctx = case scriptContextScriptInfo ctx of
+    VotingScript _  -> any (\value -> symbol `member` value) txInputsValues
     _         -> False
     where
         -- The list of transaction inputs being consumed in this transaction.
@@ -110,10 +112,10 @@ hotCredentialScript symbol _ ctx = case scriptContextPurpose ctx of
         txInputsValues = map (getValue . txOutValue . txInInfoResolved) txInputs
 
 {-# INLINABLE mkWrappedHotCredentialScript #-}
-mkWrappedHotCredentialScript :: BuiltinData -> BuiltinData -> BuiltinData -> ()
-mkWrappedHotCredentialScript = wrapThreeArgs hotCredentialScript    
+mkWrappedHotCredentialScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
+mkWrappedHotCredentialScript = wrapThreeArgs hotCredentialScript
 
-hotCredentialScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> ())
+hotCredentialScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit)
 hotCredentialScriptCode = $$(compile [|| mkWrappedHotCredentialScript ||])
 
 -- | Find the reference input that contains a certain currency symbol.
@@ -144,19 +146,19 @@ makeIsDataIndexed ''HotLockScriptRedeemer [('Vote, 0), ('Resign, 1), ('Recover, 
 --
 -- Resign X509: checks that the provided X509 certificate from the redeemer is in the datum,
 -- that the transaction is signed by this X509 certificate, and the certificate is removed from the datum.
--- Lastly, this action also checks that the transaction does not witness votes. To prevent 
+-- Lastly, this action also checks that the transaction does not witness votes. To prevent
 -- unauthorized satisfaction of the above hot CC credential script.
 --
 -- Recover: checks that the transaction is signed by a majority of the delegate certificates.
 -- this data is extracted from a reference input which contains the hard-coded currency symbol of the
 -- "Cold NFT" used in the cold credential setup.
 --
--- Note that this script requires the datum to always be an inlined datum. This so that 
+-- Note that this script requires the datum to always be an inlined datum. This so that
 -- off-chain tooling can parse the datum and verify X509 certificates against it.
 {-# INLINABLE hotLockScript #-}
 hotLockScript :: CurrencySymbol -> [X509] -> HotLockScriptRedeemer -> ScriptContext -> Bool
-hotLockScript coldNFT dtm red ctx = case scriptContextPurpose ctx of
-    Spending txOurRef -> case red of
+hotLockScript coldNFT dtm red ctx = case scriptContextScriptInfo ctx of
+    SpendingScript txOurRef _ -> case red of
         Vote     -> checkTxOutPreservation && checkMultiSig dtm
             where
                 checkTxOutPreservation = case ownInput of
@@ -191,10 +193,10 @@ hotLockScript coldNFT dtm red ctx = case scriptContextPurpose ctx of
     _                 -> False
 
 {-# INLINABLE wrappedHotLockScript #-}
-wrappedHotLockScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ()
+wrappedHotLockScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
 wrappedHotLockScript = wrapFourArgs hotLockScript
 
-hotLockScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> ())
+hotLockScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit)
 hotLockScriptCode = $$(compile [|| wrappedHotLockScript ||])
 
 -- testing purposes
@@ -204,8 +206,8 @@ hotAlwaysTrueMint :: BuiltinData -> ScriptContext -> Bool
 hotAlwaysTrueMint _ _ = traceIfFalse "This also always returns true" True
 
 {-# INLINABLE wrappedHotAlwaysTrueMint #-}
-wrappedHotAlwaysTrueMint :: BuiltinData -> BuiltinData -> ()
+wrappedHotAlwaysTrueMint :: BuiltinData -> BuiltinData -> BuiltinUnit
 wrappedHotAlwaysTrueMint = wrapTwoArgs hotAlwaysTrueMint
 
-hotAlwaysTrueMintCode :: CompiledCode (BuiltinData -> BuiltinData -> ())
+hotAlwaysTrueMintCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinUnit)
 hotAlwaysTrueMintCode = $$(compile [|| wrappedHotAlwaysTrueMint ||])

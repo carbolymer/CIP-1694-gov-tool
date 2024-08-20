@@ -27,20 +27,21 @@ import PlutusTx.Prelude
       even,
       divide,
       Ord (..),
-      Eq (..), 
-      Maybe (..), 
-      maybe, 
-      (<$>), 
+      Eq (..),
+      Maybe (..),
+      maybe,
+      (<$>),
       check,
       traceIfFalse,
-      (/=), 
-      modulo )
+      (/=),
+      modulo,
+      BuiltinUnit)
 import PlutusTx.List
     ( any,
       map,
       elem,
       foldr,
-      filter, 
+      filter,
       find )
 import PlutusTx.Builtins
     ( BuiltinByteString, Integer, error, BuiltinData)
@@ -55,11 +56,12 @@ import PlutusLedgerApi.V3
       TxOut (..),
       Value (..),
       PubKeyHash,
-      TxCert (..), 
-      ToData (..), 
-      Datum (..), 
+      TxCert (..),
+      ToData (..),
+      Datum (..),
       UnsafeFromData (..),
-      OutputDatum (..))
+      OutputDatum (..),
+      ScriptInfo (..))
 import PlutusLedgerApi.V3.Contexts (
     findTxInByTxOutRef,
     txSignedBy )
@@ -78,18 +80,18 @@ import Shared (wrapThreeArgs, wrapTwoArgs)
 -- [General notes on this file]
 -- This file contains two plutus scripts, the script that will be used as the CC cold credential,
 -- called 'coldCredentialScript'. The other script is a spending script called `coldLockScript`.
--- The CC cold credential script is parameterized by the currency symbol of a "Cold NFT", and evaluates 
--- true if the NFT is in any spending input of the transaction. 
+-- The CC cold credential script is parameterized by the currency symbol of a "Cold NFT", and evaluates
+-- true if the NFT is in any spending input of the transaction.
 -- The spending script governs the unlocking of this NFT, and therefore when and how
 -- the cold CC credential witnesses a certificate that issues a hot voting credential.
 
 -- [CC cold credential script]
--- This script just checks that the hard-coded currency symbol of the NFT is 
+-- This script just checks that the hard-coded currency symbol of the NFT is
 -- in any spending input of the transaction.
 {-# INLINABLE coldCredentialScript #-}
 coldCredentialScript :: CurrencySymbol -> BuiltinData -> ScriptContext -> Bool
-coldCredentialScript symbol _ ctx =  case scriptContextPurpose ctx of
-    Certifying _ _  -> any (\value -> symbol `member` value) txInputsValues
+coldCredentialScript symbol _ ctx =  case scriptContextScriptInfo ctx of
+    CertifyingScript _ _  -> any (\value -> symbol `member` value) txInputsValues
     _               -> False
     where
         -- The list of transaction inputs being consumed in this transaction.
@@ -98,15 +100,15 @@ coldCredentialScript symbol _ ctx =  case scriptContextPurpose ctx of
         txInputsValues = map (getValue . txOutValue . txInInfoResolved) txInputs
 
 {-# INLINABLE mkWrappedColdCredentialScript #-}
-mkWrappedColdCredentialScript :: BuiltinData -> BuiltinData -> BuiltinData -> ()
+mkWrappedColdCredentialScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
 mkWrappedColdCredentialScript = wrapThreeArgs coldCredentialScript
 
-coldCredentialScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> ())
+coldCredentialScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit)
 coldCredentialScriptCode = $$(compile [|| mkWrappedColdCredentialScript ||])
 
 -- X509 is a data type that represents a commitment to an X509 certificate.
 -- It is given by the hash of the public key that is in the certificate.
--- To make the link between onchain and offchain two-way verifiable, the hash 
+-- To make the link between onchain and offchain two-way verifiable, the hash
 -- of the certificate is also in this type.
 data X509 = X509 {
     pubKeyHash  :: PubKeyHash,
@@ -155,17 +157,17 @@ makeIsDataIndexed ''ColdLockScriptRedeemer [('Delegate, 0), ('Resign, 1), ('Reco
 --
 -- Resign X509: checks that the provided X509 certificate from the redeemer is in the delegate list,
 -- that the transaction is signed by this X509 certificate, and the certificate is removed from the delegate list.
--- Lastly, this action also checks that the transaction does not witness any certificates. To prevent 
+-- Lastly, this action also checks that the transaction does not witness any certificates. To prevent
 -- unauthorized satisfaction of the above cold CC credential script.
 --
 -- Recover: checks that the transaction is signed by a majority of the recovery certificates.
 --
--- Note that this script requires the datum to always be an inlined datum. This so that 
+-- Note that this script requires the datum to always be an inlined datum. This so that
 -- off-chain tooling can parse the datum and verify X509 certificates against it.
 {-# INLINABLE coldLockScript #-}
 coldLockScript :: ColdLockScriptDatum -> ColdLockScriptRedeemer -> ScriptContext -> Bool
-coldLockScript dtm red ctx = case scriptContextPurpose ctx of
-    Spending txOurRef -> case red of
+coldLockScript dtm red ctx = case scriptContextScriptInfo ctx of
+    SpendingScript txOurRef _ -> case red of
         Delegate     -> checkTxOutPreservation && checkMultiSig (delegateX509s dtm) && checkAuthHotCert
             where
                 checkTxOutPreservation = case ownInput of
@@ -198,10 +200,10 @@ coldLockScript dtm red ctx = case scriptContextPurpose ctx of
     _                 -> False
 
 {-# INLINABLE wrappedColdLockScript #-}
-wrappedColdLockScript :: BuiltinData -> BuiltinData -> BuiltinData -> ()
+wrappedColdLockScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
 wrappedColdLockScript = wrapThreeArgs coldLockScript
 
-coldLockScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> ())
+coldLockScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit)
 coldLockScriptCode = $$(compile [|| wrappedColdLockScript ||])
 
 -- testing purposes
@@ -211,8 +213,8 @@ coldAlwaysTrueMint :: BuiltinData -> ScriptContext -> Bool
 coldAlwaysTrueMint _ _ = True
 
 {-# INLINABLE wrappedColdAlwaysTrueMint #-}
-wrappedColdAlwaysTrueMint :: BuiltinData -> BuiltinData -> ()
+wrappedColdAlwaysTrueMint :: BuiltinData -> BuiltinData -> BuiltinUnit
 wrappedColdAlwaysTrueMint = wrapTwoArgs coldAlwaysTrueMint
 
-coldAlwaysTrueMintCode :: CompiledCode (BuiltinData -> BuiltinData -> ())
+coldAlwaysTrueMintCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinUnit)
 coldAlwaysTrueMintCode = $$(compile [|| wrappedColdAlwaysTrueMint ||])
