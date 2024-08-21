@@ -20,6 +20,13 @@ import PlutusTx
       makeIsDataIndexed )
 
 -- Helper function to wrap a script to error on the return of a False.
+{-# INLINABLE wrapOneArg #-}
+wrapOneArg  :: (ScriptContext -> Bool)
+            -> (BuiltinData -> BuiltinUnit)
+wrapOneArg f ctx =
+  check $ f
+      (unsafeFromBuiltinData ctx)
+
 {-# INLINABLE wrapTwoArgs #-}
 wrapTwoArgs  :: (UnsafeFromData a)
                 => (a -> ScriptContext -> Bool)

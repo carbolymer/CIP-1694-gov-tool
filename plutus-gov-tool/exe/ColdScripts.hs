@@ -75,7 +75,7 @@ import PlutusTx.Bool
 import PlutusTx.Numeric
     ( AdditiveGroup(..),
       AdditiveSemigroup (..) )
-import Shared (wrapThreeArgs, wrapTwoArgs)
+import Shared
 
 -- [General notes on this file]
 -- This file contains two plutus scripts, the script that will be used as the CC cold credential,
@@ -89,21 +89,22 @@ import Shared (wrapThreeArgs, wrapTwoArgs)
 -- This script just checks that the hard-coded currency symbol of the NFT is
 -- in any spending input of the transaction.
 {-# INLINABLE coldCredentialScript #-}
-coldCredentialScript :: CurrencySymbol -> BuiltinData -> ScriptContext -> Bool
-coldCredentialScript symbol _ ctx =  case scriptContextScriptInfo ctx of
-    CertifyingScript _ _  -> any (\value -> symbol `member` value) txInputsValues
-    _               -> False
-    where
-        -- The list of transaction inputs being consumed in this transaction.
-        txInputs = txInfoInputs . scriptContextTxInfo $ ctx
-        -- The list of value maps of the transaction inputs.
-        txInputsValues = map (getValue . txOutValue . txInInfoResolved) txInputs
+coldCredentialScript :: ScriptContext -> Bool
+coldCredentialScript _ = True
+-- coldCredentialScript ctx =  case scriptContextScriptInfo ctx of
+--     CertifyingScript _ _   -> any (\value -> symbol `member` value) txInputsValues
+--     _               -> False
+--     where
+--         -- The list of transaction inputs being consumed in this transaction.
+--         txInputs = txInfoInputs . scriptContextTxInfo $ ctx
+--         -- The list of value maps of the transaction inputs.
+--         txInputsValues = map (getValue . txOutValue . txInInfoResolved) txInputs
 
 {-# INLINABLE mkWrappedColdCredentialScript #-}
-mkWrappedColdCredentialScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
-mkWrappedColdCredentialScript = wrapThreeArgs coldCredentialScript
+mkWrappedColdCredentialScript :: BuiltinData -> BuiltinUnit
+mkWrappedColdCredentialScript = wrapOneArg coldCredentialScript
 
-coldCredentialScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit)
+coldCredentialScriptCode :: CompiledCode (BuiltinData -> BuiltinUnit)
 coldCredentialScriptCode = $$(compile [|| mkWrappedColdCredentialScript ||])
 
 -- X509 is a data type that represents a commitment to an X509 certificate.
@@ -165,56 +166,57 @@ makeIsDataIndexed ''ColdLockScriptRedeemer [('Delegate, 0), ('Resign, 1), ('Reco
 -- Note that this script requires the datum to always be an inlined datum. This so that
 -- off-chain tooling can parse the datum and verify X509 certificates against it.
 {-# INLINABLE coldLockScript #-}
-coldLockScript :: ColdLockScriptDatum -> ColdLockScriptRedeemer -> ScriptContext -> Bool
-coldLockScript dtm red ctx = case scriptContextScriptInfo ctx of
-    SpendingScript txOurRef _ -> case red of
-        Delegate     -> checkTxOutPreservation && checkMultiSig (delegateX509s dtm) && checkAuthHotCert
-            where
-                checkTxOutPreservation = case ownInput of
-                    Just txOut  -> txOut `elem` txInfoOutputs txInfo
-                    Nothing     -> False
-                checkAuthHotCert = case txInfoTxCerts txInfo of
-                    x:xs -> case x of
-                        TxCertAuthHotCommittee _ _ -> xs == []
-                        _ -> False
-                    _  -> True
-        Resign x509 -> memberX509 && txSignedX509 && removedX509 && notWitnessed
-            where
-                memberX509 = x509 `elem` delegateX509s'
-                txSignedX509 = txSignedBy txInfo (pubKeyHash x509)
-                delegateX509s' = delegateX509s dtm
-                newDatum = ColdLockScriptDatum (caX509 dtm) (recoveryX509s dtm) (filter (/= x509) delegateX509s')
-                removedX509 = case ownInput of
-                    Just txOut  -> let newTxOutput = txOut { txOutDatum = (OutputDatum . Datum . toBuiltinData) newDatum }
-                                   in newTxOutput `elem` txInfoOutputs txInfo
-                    Nothing     -> False
-                notWitnessed = txInfoTxCerts txInfo == []
-        Recover      -> checkMultiSig (recoveryX509s dtm)
-        where
-            txInfo = scriptContextTxInfo ctx
-            ownInput = txInInfoResolved <$> findTxInByTxOutRef txOurRef txInfo
-            checkMultiSig list = majority <= numberOfSignatures && numberOfSignatures > 0
-                where
-                    majority = (\x -> divide x 2 + modulo x 2) $ length list
-                    numberOfSignatures = length $ filter (txSignedBy txInfo . pubKeyHash) list
-    _                 -> False
+coldLockScript :: ScriptContext -> Bool
+coldLockScript _ = True
+-- coldLockScript ctx = case scriptContextScriptInfo ctx of
+--     SpendingScript txOurRef _ -> case red of
+--         Delegate     -> checkTxOutPreservation && checkMultiSig (delegateX509s dtm) && checkAuthHotCert
+--             where
+--                 checkTxOutPreservation = case ownInput of
+--                     Just txOut  -> txOut `elem` txInfoOutputs txInfo
+--                     Nothing     -> False
+--                 checkAuthHotCert = case txInfoTxCerts txInfo of
+--                     x:xs -> case x of
+--                         TxCertAuthHotCommittee _ _ -> xs == []
+--                         _ -> False
+--                     _  -> True
+--         Resign x509 -> memberX509 && txSignedX509 && removedX509 && notWitnessed
+--             where
+--                 memberX509 = x509 `elem` delegateX509s'
+--                 txSignedX509 = txSignedBy txInfo (pubKeyHash x509)
+--                 delegateX509s' = delegateX509s dtm
+--                 newDatum = ColdLockScriptDatum (caX509 dtm) (recoveryX509s dtm) (filter (/= x509) delegateX509s')
+--                 removedX509 = case ownInput of
+--                     Just txOut  -> let newTxOutput = txOut { txOutDatum = (OutputDatum . Datum . toBuiltinData) newDatum }
+--                                    in newTxOutput `elem` txInfoOutputs txInfo
+--                     Nothing     -> False
+--                 notWitnessed = txInfoTxCerts txInfo == []
+--         Recover      -> checkMultiSig (recoveryX509s dtm)
+--         where
+--             txInfo = scriptContextTxInfo ctx
+--             ownInput = txInInfoResolved <$> findTxInByTxOutRef txOurRef txInfo
+--             checkMultiSig list = majority <= numberOfSignatures && numberOfSignatures > 0
+--                 where
+--                     majority = (\x -> divide x 2 + modulo x 2) $ length list
+--                     numberOfSignatures = length $ filter (txSignedBy txInfo . pubKeyHash) list
+--     _                 -> False
 
 {-# INLINABLE wrappedColdLockScript #-}
-wrappedColdLockScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
-wrappedColdLockScript = wrapThreeArgs coldLockScript
+wrappedColdLockScript :: BuiltinData -> BuiltinUnit
+wrappedColdLockScript = wrapOneArg coldLockScript
 
-coldLockScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit)
+coldLockScriptCode :: CompiledCode (BuiltinData -> BuiltinUnit)
 coldLockScriptCode = $$(compile [|| wrappedColdLockScript ||])
 
 -- testing purposes
 
 {-# INLINABLE coldAlwaysTrueMint #-}
-coldAlwaysTrueMint :: BuiltinData -> ScriptContext -> Bool
-coldAlwaysTrueMint _ _ = True
+coldAlwaysTrueMint :: ScriptContext -> Bool
+coldAlwaysTrueMint _ = True
 
 {-# INLINABLE wrappedColdAlwaysTrueMint #-}
-wrappedColdAlwaysTrueMint :: BuiltinData -> BuiltinData -> BuiltinUnit
-wrappedColdAlwaysTrueMint = wrapTwoArgs coldAlwaysTrueMint
+wrappedColdAlwaysTrueMint :: BuiltinData -> BuiltinUnit
+wrappedColdAlwaysTrueMint = wrapOneArg coldAlwaysTrueMint
 
-coldAlwaysTrueMintCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinUnit)
+coldAlwaysTrueMintCode :: CompiledCode (BuiltinData -> BuiltinUnit)
 coldAlwaysTrueMintCode = $$(compile [|| wrappedColdAlwaysTrueMint ||])

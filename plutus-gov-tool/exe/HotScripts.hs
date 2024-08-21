@@ -79,7 +79,7 @@ import PlutusTx.Numeric
 import ColdScripts
     ( ColdLockScriptDatum (..),
       X509 (..))
-import Shared (wrapTwoArgs, wrapThreeArgs, wrapFourArgs)
+import Shared
 
 -- [General notes on this file]
 -- This file contains two plutus scripts, the first script will be used as the CC hot credential,
@@ -156,58 +156,59 @@ makeIsDataIndexed ''HotLockScriptRedeemer [('Vote, 0), ('Resign, 1), ('Recover, 
 -- Note that this script requires the datum to always be an inlined datum. This so that
 -- off-chain tooling can parse the datum and verify X509 certificates against it.
 {-# INLINABLE hotLockScript #-}
-hotLockScript :: CurrencySymbol -> [X509] -> HotLockScriptRedeemer -> ScriptContext -> Bool
-hotLockScript coldNFT dtm red ctx = case scriptContextScriptInfo ctx of
-    SpendingScript txOurRef _ -> case red of
-        Vote     -> checkTxOutPreservation && checkMultiSig dtm
-            where
-                checkTxOutPreservation = case ownInput of
-                    Just txOut  -> txOut `elem` txInfoOutputs txInfo
-                    Nothing     -> False
-        Resign x509 -> memberX509 && txSignedX509 && removedX509 && notWitnessed
-            where
-                memberX509 = x509 `elem` dtm
-                txSignedX509 = txSignedBy txInfo (pubKeyHash x509)
-                newDatum = filter (/= x509) dtm
-                removedX509 = case ownInput of
-                    Just txOut  -> let newTxOutput = txOut { txOutDatum = (OutputDatum . Datum . toBuiltinData) newDatum }
-                                   in newTxOutput `elem` txInfoOutputs txInfo
-                    Nothing     -> False
-                notWitnessed = null (txInfoVotes txInfo)
-        Recover      -> case refInput of
-                    Just txOut  -> case txOutDatum txOut of
-                        NoOutputDatum -> False
-                        OutputDatumHash _ -> False
-                        OutputDatum inlineDatum -> case (fromBuiltinData . getDatum) inlineDatum of
-                            Just ccDtm -> checkMultiSig (delegateX509s ccDtm)
-                            Nothing -> False
-                    Nothing     -> False
-        where
-            txInfo = scriptContextTxInfo ctx
-            ownInput = txInInfoResolved <$> findTxInByTxOutRef txOurRef txInfo
-            refInput = txInInfoResolved <$> findTxInByCurrencySymbolInRefUTxO coldNFT txInfo
-            checkMultiSig list = majority <= numberOfSignatures && numberOfSignatures > 0
-                where
-                    majority = (\x -> divide x 2 + modulo x 2) $ length list
-                    numberOfSignatures = length $ filter (txSignedBy txInfo . pubKeyHash) list
-    _                 -> False
+hotLockScript :: ScriptContext -> Bool
+hotLockScript _ = True
+-- hotLockScript = case scriptContextScriptInfo ctx of
+--     SpendingScript txOurRef _ -> case red of
+--         Vote     -> checkTxOutPreservation && checkMultiSig dtm
+--             where
+--                 checkTxOutPreservation = case ownInput of
+--                     Just txOut  -> txOut `elem` txInfoOutputs txInfo
+--                     Nothing     -> False
+--         Resign x509 -> memberX509 && txSignedX509 && removedX509 && notWitnessed
+--             where
+--                 memberX509 = x509 `elem` dtm
+--                 txSignedX509 = txSignedBy txInfo (pubKeyHash x509)
+--                 newDatum = filter (/= x509) dtm
+--                 removedX509 = case ownInput of
+--                     Just txOut  -> let newTxOutput = txOut { txOutDatum = (OutputDatum . Datum . toBuiltinData) newDatum }
+--                                    in newTxOutput `elem` txInfoOutputs txInfo
+--                     Nothing     -> False
+--                 notWitnessed = null (txInfoVotes txInfo)
+--         Recover      -> case refInput of
+--                     Just txOut  -> case txOutDatum txOut of
+--                         NoOutputDatum -> False
+--                         OutputDatumHash _ -> False
+--                         OutputDatum inlineDatum -> case (fromBuiltinData . getDatum) inlineDatum of
+--                             Just ccDtm -> checkMultiSig (delegateX509s ccDtm)
+--                             Nothing -> False
+--                     Nothing     -> False
+--         where
+--             txInfo = scriptContextTxInfo ctx
+--             ownInput = txInInfoResolved <$> findTxInByTxOutRef txOurRef txInfo
+--             refInput = txInInfoResolved <$> findTxInByCurrencySymbolInRefUTxO coldNFT txInfo
+--             checkMultiSig list = majority <= numberOfSignatures && numberOfSignatures > 0
+--                 where
+--                     majority = (\x -> divide x 2 + modulo x 2) $ length list
+--                     numberOfSignatures = length $ filter (txSignedBy txInfo . pubKeyHash) list
+--     _                 -> False
 
 {-# INLINABLE wrappedHotLockScript #-}
-wrappedHotLockScript :: BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit
-wrappedHotLockScript = wrapFourArgs hotLockScript
+wrappedHotLockScript :: BuiltinData -> BuiltinUnit
+wrappedHotLockScript = wrapOneArg hotLockScript
 
-hotLockScriptCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinData -> BuiltinData -> BuiltinUnit)
+hotLockScriptCode :: CompiledCode (BuiltinData -> BuiltinUnit)
 hotLockScriptCode = $$(compile [|| wrappedHotLockScript ||])
 
 -- testing purposes
 
 {-# INLINABLE hotAlwaysTrueMint #-}
-hotAlwaysTrueMint :: BuiltinData -> ScriptContext -> Bool
-hotAlwaysTrueMint _ _ = traceIfFalse "This also always returns true" True
+hotAlwaysTrueMint :: ScriptContext -> Bool
+hotAlwaysTrueMint _ = traceIfFalse "This also always returns true" True
 
 {-# INLINABLE wrappedHotAlwaysTrueMint #-}
-wrappedHotAlwaysTrueMint :: BuiltinData -> BuiltinData -> BuiltinUnit
-wrappedHotAlwaysTrueMint = wrapTwoArgs hotAlwaysTrueMint
+wrappedHotAlwaysTrueMint :: BuiltinData -> BuiltinUnit
+wrappedHotAlwaysTrueMint = wrapOneArg hotAlwaysTrueMint
 
-hotAlwaysTrueMintCode :: CompiledCode (BuiltinData -> BuiltinData -> BuiltinUnit)
+hotAlwaysTrueMintCode :: CompiledCode (BuiltinData -> BuiltinUnit)
 hotAlwaysTrueMintCode = $$(compile [|| wrappedHotAlwaysTrueMint ||])

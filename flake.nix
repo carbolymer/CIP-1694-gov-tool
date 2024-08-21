@@ -95,6 +95,11 @@
             inputs.cardano-node.outputs.packages.${system}.cardano-node
             inputs.cardano-node.outputs.packages.${system}.cardano-cli
 
+
+            ( # fix missing haskell-language-server-wrapper binary
+              writeShellScriptBin "haskell-language-server-wrapper"
+              "haskell-language-server $@")
+
             (pkgs.writeShellScriptBin "deploy-local-testnet" ''
                cd $REPO_ROOT
                cd local-testnet
